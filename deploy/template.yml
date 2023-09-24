@@ -18,37 +18,55 @@ Parameters:
 
 Resources:
   # SMS delivery service resources
+  SMSDeliverySNS:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: "SMSDeliverySNS"
+      TopicName: "SMSDeliverySNS"
+  SESDomain:
+    Type: AWS::SES::DomainIdentity
+    Properties:
+      Domain: paul7jakintayo@gmail.com
   SMSDeliveryLambdaRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
               Service: lambda.amazonaws.com
-            Action: 'sts:AssumeRole'
+            Action: "sts:AssumeRole"
       Policies:
         - PolicyName: LambdaBasicExecutionPolicy
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
-                - logs:*
+                  - logs:*
                 Resource: arn:aws:logs:*:*:*
         - PolicyName: LambdaAllowSQS
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  Resource: !GetAtt SMSDeliveryQueue.Arn
+        - PolicyName: LambdaAllowSMSTo
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action:
-                - sqs:ReceiveMessage
-                - sqs:DeleteMessage
-                - sqs:GetQueueAttributes
+                - sns:SetSMSAttributes
+                - sns:Publish
                 Resource: !GetAtt SMSDeliveryQueue.Arn
   SMSDeliveryLambdaFunction:
-    Type: 'AWS::Lambda::Function'
+    Type: "AWS::Lambda::Function"
     Properties:
       Handler: index.handler
       Role: !GetAtt SMSDeliveryLambdaRole.Arn
@@ -58,15 +76,19 @@ Resources:
         S3Key: !Ref SMSServicePackage
       Runtime: nodejs14.x
       MemorySize: 128
-      Timeout: 30
+      Timeout: 10
+      Environment:
+        Variables:
+          REGION: !Ref AWSRegion
+          SMS_QUEUE_URL: !GetAtt SMSDeliveryQueue.QueueUrl
 
   SMSDeliveryQueue:
     Type: "AWS::SQS::Queue"
     Properties:
-      VisibilityTimeout: 30
+      VisibilityTimeout: 10
 
   SMSDeliveryLambdaSQSTrigger:
-    Type: 'AWS::Lambda::EventSourceMapping'
+    Type: "AWS::Lambda::EventSourceMapping"
     Properties:
       EventSourceArn: !GetAtt SMSDeliveryQueue.Arn
       FunctionName: !GetAtt SMSDeliveryLambdaFunction.Arn
@@ -80,30 +102,30 @@ Resources:
   EmailDeliveryQueue:
     Type: "AWS::SQS::Queue"
     Properties:
-      VisibilityTimeout: 30
+      VisibilityTimeout: 10
 
   EmailDeliveryLambdaRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
               Service: lambda.amazonaws.com
-            Action: 'sts:AssumeRole'
+            Action: "sts:AssumeRole"
       Policies:
         - PolicyName: LambdaBasicExecutionPolicy
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
-                - logs:*
+                  - logs:*
                 Resource: arn:aws:logs:*:*:*
         - PolicyName: LambdaAllowSQS
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
@@ -111,11 +133,19 @@ Resources:
                   - sqs:DeleteMessage
                   - sqs:GetQueueAttributes
                 Resource: !GetAtt EmailDeliveryQueue.Arn
+        - PolicyName: LambdaAllowSESTo
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                Resource: arn:aws:ses:*
 
   EmailDeliveryLambdaFunction:
-    Type: 'AWS::Lambda::Function'
+    Type: "AWS::Lambda::Function"
     Properties:
-      Handler: index.handler
+      Handler: emailService.handler
       Role: !GetAtt EmailDeliveryLambdaRole.Arn
       FunctionName: EmailDeliveryLambdaFunction
       Code:
@@ -123,11 +153,28 @@ Resources:
         S3Key: !Ref EmailServiceArtifact
       Runtime: nodejs14.x
       MemorySize: 128
-      Timeout: 30
+      Timeout: 10
+      Environment:
+        Variables:
+          REGION: !Ref AWSRegion
+          EMAIL_QUEUE_URL: !GetAtt EmailDeliveryQueue.QueueUrl
 
   EmailDeliveryLambdaSQSTrigger:
-    Type: 'AWS::Lambda::EventSourceMapping'
+    Type: "AWS::Lambda::EventSourceMapping"
     Properties:
       EventSourceArn: !GetAtt EmailDeliveryQueue.Arn
       FunctionName: !GetAtt EmailDeliveryLambdaFunction.Arn
       Enabled: True
+      
+Outputs:
+  SMSDeliverySNS:
+    Description: The SNS used for message delivery
+    Value: !Ref SMSDeliverySNS
+  
+  EmailDeliveryQueue:
+    Description: The SES used for email delivery
+    Value: !GetAtt EmailDeliveryQueue.QueueUrl
+  
+  SMSDeliveryQueue:
+    Description: The SES used for email delivery
+    Value: !GetAtt SMSDeliveryQueue.QueueUrl
